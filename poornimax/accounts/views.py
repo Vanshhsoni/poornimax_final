@@ -161,6 +161,64 @@ def answers_view(request):
 @login_required
 def questionnaire_view(request):
     user = request.user
+    
+    # Define choices here directly
+    HOBBY_CHOICES = [
+        ('Photography', 'Photography'),
+        ('Coding', 'Coding'),
+        ('Gaming', 'Gaming'),
+        ('Editing', 'Editing'),
+        ('Designing', 'Designing'),
+        ('Reading', 'Reading'),
+        ('Music', 'Music'),
+        ('Cooking', 'Cooking'),
+        ('Traveling', 'Traveling'),
+        ('Dancing', 'Dancing'),
+        ('Singing', 'Singing'),
+        ('Painting', 'Painting'),
+        ('Fitness', 'Fitness'),
+        ('Sports', 'Sports'),
+        ('Hiking', 'Hiking'),
+        ('Movies', 'Movies'),
+        ('Anime', 'Anime'),
+        ('Writing', 'Writing'),
+        ('Driving', 'Driving'),
+    ]
+    
+    EVENT_CHOICES = [
+        ('Tech Fests', 'Tech Fests'),
+        ('Cultural Nights', 'Cultural Nights'),
+        ('Hackathons', 'Hackathons'),
+        ('Workshops', 'Workshops'),
+        ('Sports Competitions', 'Sports Competitions'),
+        ('Seminars', 'Seminars'),
+        ('Club Activities', 'Club Activities'),
+        ('Conferences', 'Conferences'),
+        ('Competitions', 'Competitions'),
+        ('Social Gatherings', 'Social Gatherings'),
+        ('Debates', 'Debates'),
+    ]
+    
+    WEEKEND_CHOICES = [
+        ('City exploration', 'City exploration'),
+        ('Movie marathons', 'Movie marathons'),
+        ('Coffee shop work', 'Coffee shop work'),
+        ('Dancing', 'Dancing'),
+        ('Sleeping', 'Sleeping'),
+        ('Family time', 'Family time'),
+        ('Road trips', 'Road trips'),
+        ('Gaming', 'Gaming'),
+        ('Shopping', 'Shopping'),
+        ('Partying', 'Partying'),
+        ('Outdoor activities', 'Outdoor activities'),
+    ]
+
+    # Create context with form choices to populate the form
+    context = {
+        'HOBBY_CHOICES': HOBBY_CHOICES,
+        'EVENT_CHOICES': EVENT_CHOICES,
+        'WEEKEND_CHOICES': WEEKEND_CHOICES,
+    }
 
     if request.method == 'POST':
         data = request.POST
@@ -168,17 +226,12 @@ def questionnaire_view(request):
         # Check if user already has a questionnaire entry
         questionnaire, created = UserQuestionnaire.objects.get_or_create(user=user)
 
-        # Set 1: Comma-separated text fields
-        questionnaire.hobbies = data.get('hobbies', '')
-        questionnaire.college_events = data.get('college_events', '')
-        questionnaire.weekend_plans = data.get('weekend_plans', '')
-        questionnaire.friendship_values = data.get('friendship_values', '')
-        questionnaire.content_posting = data.get('content_posting', '')
-        questionnaire.college_excitements = data.get('college_excitements', '')
-        questionnaire.learning_preferences = data.get('learning_preferences', '')
-        questionnaire.relaxation_methods = data.get('relaxation_methods', '')
-
-        # Set 2: Single Choice
+        # Handle multiple choice fields (convert checkbox selections to comma-separated string)
+        questionnaire.hobbies = ','.join(request.POST.getlist('hobbies'))
+        questionnaire.college_events = ','.join(request.POST.getlist('college_events'))
+        questionnaire.weekend_plans = ','.join(request.POST.getlist('weekend_plans'))
+        
+        # Single choice fields
         questionnaire.introvert_extrovert = data.get('introvert_extrovert')
         questionnaire.first_meet = data.get('first_meet')
         questionnaire.sleep_type = data.get('sleep_type')
@@ -186,10 +239,9 @@ def questionnaire_view(request):
         questionnaire.year = data.get('year')
         questionnaire.comm_style = data.get('comm_style')
         questionnaire.posting_frequency = data.get('posting_frequency')
-        questionnaire.decision_style = data.get('decision_style')
         questionnaire.free_time = data.get('free_time')
 
-        # Set 3: Relationship Intent
+        # Relationship fields
         questionnaire.relationship_status = data.get('relationship_status')
         questionnaire.dating_approach = data.get('dating_approach')
         questionnaire.compatibility = data.get('compatibility')
@@ -197,24 +249,32 @@ def questionnaire_view(request):
         questionnaire.relationship_view = data.get('relationship_view')
         questionnaire.looking_for = data.get('looking_for')
 
+        # Mark user as having completed the questionnaire
         user.has_answered_questionnaire = True
         user.save()
         questionnaire.save()
-        messages.success(request, "Preferences saved successfully!")
-        return redirect('feed:home')  # or wherever you want to redirect
+        
+        messages.success(request, "Your profile is complete! Let's find your matches.")
+        return redirect('feed:home')  # Or wherever you want to redirect
 
     else:
         # Prefill the form if data exists
         try:
             questionnaire = UserQuestionnaire.objects.get(user=user)
+            context['questionnaire'] = questionnaire
+            
+            # Convert comma-separated strings back to lists for checkboxes
+            if questionnaire.hobbies:
+                context['selected_hobbies'] = questionnaire.hobbies.split(',')
+            if questionnaire.college_events:
+                context['selected_events'] = questionnaire.college_events.split(',')
+            if questionnaire.weekend_plans:
+                context['selected_weekends'] = questionnaire.weekend_plans.split(',')
+                
         except UserQuestionnaire.DoesNotExist:
-            questionnaire = None
+            pass
 
-    return render(request, 'questionnaire_form.html', {
-        'questionnaire': questionnaire,
-    })
-
-
+    return render(request, 'questionnaire_form.html', context)
 @login_required
 def edit_profile(request):
     user = request.user

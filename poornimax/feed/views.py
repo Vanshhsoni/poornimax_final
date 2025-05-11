@@ -56,49 +56,10 @@ def profile(request, user_id):
         post.comments_count = Comment.objects.filter(post=post).count()
     
     # Calculate compatibility score when viewing another user's profile
-    compatibility_score = 0
+    compatibility_score = None
     if request.user != profile_user:
         try:
-            user_questionnaire = UserQuestionnaire.objects.get(user=request.user)
-            other_user_questionnaire = UserQuestionnaire.objects.get(user=profile_user)
-            
-            # Set 3: Relationship Intent (Most Weighting)
-            compatibility_score += compare_single_choice(user_questionnaire.relationship_status, other_user_questionnaire.relationship_status, max_points=25)
-            compatibility_score += compare_single_choice(user_questionnaire.dating_approach, other_user_questionnaire.dating_approach, max_points=20)
-            compatibility_score += compare_single_choice(user_questionnaire.compatibility, other_user_questionnaire.compatibility, max_points=15)
-            compatibility_score += compare_single_choice(user_questionnaire.relationship_view, other_user_questionnaire.relationship_view, max_points=15)
-            compatibility_score += compare_single_choice(user_questionnaire.similar_interests, other_user_questionnaire.similar_interests, max_points=10)
-
-            # Set 1: Multiple Choice Inputs (Medium Weighting)
-            compatibility_score += compare_multiple_choice(user_questionnaire.hobbies, other_user_questionnaire.hobbies) * 5
-            compatibility_score += compare_multiple_choice(user_questionnaire.college_events, other_user_questionnaire.college_events) * 5
-            compatibility_score += compare_multiple_choice(user_questionnaire.weekend_plans, other_user_questionnaire.weekend_plans) * 5
-            compatibility_score += compare_multiple_choice(user_questionnaire.friendship_values, other_user_questionnaire.friendship_values) * 5
-            compatibility_score += compare_multiple_choice(user_questionnaire.content_posting, other_user_questionnaire.content_posting) * 5
-            compatibility_score += compare_multiple_choice(user_questionnaire.college_excitements, other_user_questionnaire.college_excitements) * 5
-            compatibility_score += compare_multiple_choice(user_questionnaire.learning_preferences, other_user_questionnaire.learning_preferences) * 5
-            compatibility_score += compare_multiple_choice(user_questionnaire.relaxation_methods, other_user_questionnaire.relaxation_methods) * 5
-
-            # Set 2: Single Choice Inputs (Least Weighting)
-            compatibility_score += compare_single_choice(user_questionnaire.introvert_extrovert, other_user_questionnaire.introvert_extrovert) * 3
-            compatibility_score += compare_single_choice(user_questionnaire.first_meet, other_user_questionnaire.first_meet) * 3
-            compatibility_score += compare_single_choice(user_questionnaire.sleep_type, other_user_questionnaire.sleep_type) * 3
-            compatibility_score += compare_single_choice(user_questionnaire.important_trait, other_user_questionnaire.important_trait) * 3
-            compatibility_score += compare_single_choice(user_questionnaire.year, other_user_questionnaire.year) * 3
-            compatibility_score += compare_single_choice(user_questionnaire.comm_style, other_user_questionnaire.comm_style) * 3
-            compatibility_score += compare_single_choice(user_questionnaire.posting_frequency, other_user_questionnaire.posting_frequency) * 3
-            compatibility_score += compare_single_choice(user_questionnaire.decision_style, other_user_questionnaire.decision_style) * 3
-            compatibility_score += compare_single_choice(user_questionnaire.free_time, other_user_questionnaire.free_time) * 3
-
-            # Capping the score to a maximum of 99% (realistic compatibility)
-            compatibility_score = min(compatibility_score, 99)
-            
-            # Ensuring that the compatibility score never goes below 10%
-            compatibility_score = max(compatibility_score, 10)
-            
-            # Round to nearest integer
-            compatibility_score = round(compatibility_score)
-            
+            compatibility_score = calculate_compatibility(request.user, profile_user)
         except UserQuestionnaire.DoesNotExist:
             # If either user hasn't completed the questionnaire
             compatibility_score = None
@@ -112,74 +73,121 @@ def profile(request, user_id):
         'latest_post': latest_post,
         'compatibility_score': compatibility_score,
     }
-    
     return render(request, 'feed/profile.html', context)
 
-# Helper function to compare compatibility
-def compare_multiple_choice(user_answer, other_user_answer, max_points=5):
-    user_answer_set = set([x.strip().lower() for x in user_answer.split(',')])
-    other_user_answer_set = set([x.strip().lower() for x in other_user_answer.split(',')])
-    
-    match_count = len(user_answer_set.intersection(other_user_answer_set))
-    if match_count == 0:
-        return 0
-    return (match_count / len(user_answer_set.union(other_user_answer_set))) * max_points
+
+def calculate_compatibility(user1, user2):
+    try:
+        user1_questionnaire = UserQuestionnaire.objects.get(user=user1)
+        user2_questionnaire = UserQuestionnaire.objects.get(user=user2)
+        
+        total_score = 0
+        max_possible_score = 0
+        
+        # Relationship Intent - Highest weight (45%)
+        relationship_weight = 45
+        relationship_score = 0
+        relationship_max = 5
+        
+        if user1_questionnaire.relationship_status == user2_questionnaire.relationship_status:
+            relationship_score += 1
+        if user1_questionnaire.dating_approach == user2_questionnaire.dating_approach:
+            relationship_score += 1
+        if user1_questionnaire.compatibility == user2_questionnaire.compatibility:
+            relationship_score += 1
+        if user1_questionnaire.relationship_view == user2_questionnaire.relationship_view:
+            relationship_score += 1
+        if user1_questionnaire.similar_interests == user2_questionnaire.similar_interests:
+            relationship_score += 1
+            
+        # Calculate weighted relationship score
+        total_score += (relationship_score / relationship_max) * relationship_weight
+        max_possible_score += relationship_weight
+        
+        # Multiple Choice Fields - Medium weight (35%)
+        multi_choice_weight = 35
+        multi_choice_score = 0
+        multi_choice_max = 3
+        
+        # Hobbies comparison
+        user1_hobbies = set(user1_questionnaire.hobbies.split(',')) if user1_questionnaire.hobbies else set()
+        user2_hobbies = set(user2_questionnaire.hobbies.split(',')) if user2_questionnaire.hobbies else set()
+        if user1_hobbies and user2_hobbies:
+            common_hobbies = user1_hobbies.intersection(user2_hobbies)
+            hobby_similarity = len(common_hobbies) / max(len(user1_hobbies.union(user2_hobbies)), 1)
+            multi_choice_score += hobby_similarity
+            
+        # College events comparison
+        user1_events = set(user1_questionnaire.college_events.split(',')) if user1_questionnaire.college_events else set()
+        user2_events = set(user2_questionnaire.college_events.split(',')) if user2_questionnaire.college_events else set()
+        if user1_events and user2_events:
+            common_events = user1_events.intersection(user2_events)
+            events_similarity = len(common_events) / max(len(user1_events.union(user2_events)), 1)
+            multi_choice_score += events_similarity
+            
+        # Weekend plans comparison
+        user1_weekends = set(user1_questionnaire.weekend_plans.split(',')) if user1_questionnaire.weekend_plans else set()
+        user2_weekends = set(user2_questionnaire.weekend_plans.split(',')) if user2_questionnaire.weekend_plans else set()
+        if user1_weekends and user2_weekends:
+            common_weekends = user1_weekends.intersection(user2_weekends)
+            weekends_similarity = len(common_weekends) / max(len(user1_weekends.union(user2_weekends)), 1)
+            multi_choice_score += weekends_similarity
+            
+        # Calculate weighted multi-choice score
+        total_score += (multi_choice_score / multi_choice_max) * multi_choice_weight
+        max_possible_score += multi_choice_weight
+        
+        # Personality Traits - Lower weight (20%)
+        personality_weight = 20
+        personality_score = 0
+        personality_max = 7
+        
+        if user1_questionnaire.introvert_extrovert == user2_questionnaire.introvert_extrovert:
+            personality_score += 1
+        if user1_questionnaire.first_meet == user2_questionnaire.first_meet:
+            personality_score += 1
+        if user1_questionnaire.sleep_type == user2_questionnaire.sleep_type:
+            personality_score += 1
+        if user1_questionnaire.important_trait == user2_questionnaire.important_trait:
+            personality_score += 1
+        if user1_questionnaire.comm_style == user2_questionnaire.comm_style:
+            personality_score += 1
+        if user1_questionnaire.posting_frequency == user2_questionnaire.posting_frequency:
+            personality_score += 1
+        if user1_questionnaire.free_time == user2_questionnaire.free_time:
+            personality_score += 1
+            
+        # Calculate weighted personality score
+        total_score += (personality_score / personality_max) * personality_weight
+        max_possible_score += personality_weight
+        
+        # Calculate final percentage (normalized to 100%)
+        final_score = (total_score / max_possible_score) * 100
+        
+        # Ensure minimum compatibility of 19% and maximum of 99%
+        final_score = max(19, min(99, final_score))
+        
+        # Round to nearest integer
+        return round(final_score)
+        
+    except UserQuestionnaire.DoesNotExist:
+        return None
 
 
-# Helper function to compare single-choice compatibility
-def compare_single_choice(user_answer, other_user_answer, max_points=3):
-    return max_points if user_answer == other_user_answer else 0
-
-
-# View to list all users with compatibility scores
 @login_required
 def all_users(request):
     logged_in_user = request.user
-    user_questionnaire = UserQuestionnaire.objects.get(user=logged_in_user)
-
+    
     compatibility_scores = []
     other_users = User.objects.exclude(id=logged_in_user.id)
 
     for user in other_users:
-        other_user_questionnaire = UserQuestionnaire.objects.get(user=user)
-        compatibility_score = 0
-
-        # Set 3: Relationship Intent (Most Weighting)
-        compatibility_score += compare_single_choice(user_questionnaire.relationship_status, other_user_questionnaire.relationship_status, max_points=25)
-        compatibility_score += compare_single_choice(user_questionnaire.dating_approach, other_user_questionnaire.dating_approach, max_points=20)
-        compatibility_score += compare_single_choice(user_questionnaire.compatibility, other_user_questionnaire.compatibility, max_points=15)
-        compatibility_score += compare_single_choice(user_questionnaire.relationship_view, other_user_questionnaire.relationship_view, max_points=15)
-        compatibility_score += compare_single_choice(user_questionnaire.similar_interests, other_user_questionnaire.similar_interests, max_points=10)
-
-        # Set 1: Multiple Choice Inputs (Medium Weighting)
-        compatibility_score += compare_multiple_choice(user_questionnaire.hobbies, other_user_questionnaire.hobbies) * 5
-        compatibility_score += compare_multiple_choice(user_questionnaire.college_events, other_user_questionnaire.college_events) * 5
-        compatibility_score += compare_multiple_choice(user_questionnaire.weekend_plans, other_user_questionnaire.weekend_plans) * 5
-        compatibility_score += compare_multiple_choice(user_questionnaire.friendship_values, other_user_questionnaire.friendship_values) * 5
-        compatibility_score += compare_multiple_choice(user_questionnaire.content_posting, other_user_questionnaire.content_posting) * 5
-        compatibility_score += compare_multiple_choice(user_questionnaire.college_excitements, other_user_questionnaire.college_excitements) * 5
-        compatibility_score += compare_multiple_choice(user_questionnaire.learning_preferences, other_user_questionnaire.learning_preferences) * 5
-        compatibility_score += compare_multiple_choice(user_questionnaire.relaxation_methods, other_user_questionnaire.relaxation_methods) * 5
-
-        # Set 2: Single Choice Inputs (Least Weighting)
-        compatibility_score += compare_single_choice(user_questionnaire.introvert_extrovert, other_user_questionnaire.introvert_extrovert) * 3
-        compatibility_score += compare_single_choice(user_questionnaire.first_meet, other_user_questionnaire.first_meet) * 3
-        compatibility_score += compare_single_choice(user_questionnaire.sleep_type, other_user_questionnaire.sleep_type) * 3
-        compatibility_score += compare_single_choice(user_questionnaire.important_trait, other_user_questionnaire.important_trait) * 3
-        compatibility_score += compare_single_choice(user_questionnaire.year, other_user_questionnaire.year) * 3
-        compatibility_score += compare_single_choice(user_questionnaire.comm_style, other_user_questionnaire.comm_style) * 3
-        compatibility_score += compare_single_choice(user_questionnaire.posting_frequency, other_user_questionnaire.posting_frequency) * 3
-        compatibility_score += compare_single_choice(user_questionnaire.decision_style, other_user_questionnaire.decision_style) * 3
-        compatibility_score += compare_single_choice(user_questionnaire.free_time, other_user_questionnaire.free_time) * 3
-
-        # Capping the score to a maximum of 99% (realistic compatibility)
-        compatibility_score = min(compatibility_score, 99)
-
-        # Ensuring that the compatibility score never goes below 10%
-        compatibility_score = max(compatibility_score, 10)
-
-        # Add the user and their compatibility score to the list
-        compatibility_scores.append((user, compatibility_score))
+        try:
+            compatibility_score = calculate_compatibility(logged_in_user, user)
+            if compatibility_score is not None:
+                compatibility_scores.append((user, compatibility_score))
+        except UserQuestionnaire.DoesNotExist:
+            continue
 
     # Sort the compatibility scores in descending order
     compatibility_scores.sort(key=lambda x: x[1], reverse=True)
